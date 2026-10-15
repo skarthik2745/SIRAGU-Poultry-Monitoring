@@ -130,8 +130,9 @@ ${alert.actionRequired ? `🎯 <b>Prescribed Remediation Action:</b>\n👉 <i>${
 ⚡ <i>PoultryGuard IoT Telemetry Engine</i>
     `.trim();
 
+    // 1. Try local Express backend proxy first (/api/telegram/send)
     try {
-      const res = await fetch(`${API_BASE}/api/telegram/send`, {
+      const res = await fetch('/api/telegram/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -141,17 +142,40 @@ ${alert.actionRequired ? `🎯 <b>Prescribed Remediation Action:</b>\n👉 <i>${
         }),
       });
 
-      const json = await res.json();
+      if (res.ok) {
+        const json = await res.json();
+        if (json.ok) {
+          console.log('✅ [Telegram] Alert sent via proxy to Chat ID:', this.targetChatId);
+          return { success: true };
+        }
+      }
+    } catch {
+      // Backend proxy unavailable, proceed to direct fallback
+    }
+
+    // 2. Direct Telegram API fallback (bypasses local backend if offline)
+    try {
+      const directRes = await fetch('https://api.telegram.org/bot8766111438:AAGHfTdWeaLHDEXWo89Fe_lN-fm040km2HY/sendMessage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: this.targetChatId,
+          text: formattedMessage,
+          parse_mode: 'HTML',
+        }),
+      });
+
+      const json = await directRes.json();
       if (json.ok) {
-        console.log('✅ [Telegram] Alert sent successfully to Chat ID:', this.targetChatId);
+        console.log('✅ [Telegram] Alert sent directly to Telegram API for Chat ID:', this.targetChatId);
         return { success: true };
       } else {
         console.error('❌ [Telegram] API Error:', json);
-        return { success: false, error: json.description || json.error || 'Telegram API error' };
+        return { success: false, error: json.description || 'Telegram API error' };
       }
     } catch (err: any) {
-      console.error('❌ [Telegram] Network request failed:', err);
-      return { success: false, error: err.message || 'Cannot reach backend server' };
+      console.error('❌ [Telegram] Direct request failed:', err);
+      return { success: false, error: err.message || 'Cannot reach Telegram servers' };
     }
   }
 

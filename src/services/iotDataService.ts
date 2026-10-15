@@ -54,6 +54,8 @@ class IoTDataService {
     this.state = this.getInitialState();
     this.startSimulation();
     this.startApiPolling();
+    // Fetch live sensor values immediately on initial load
+    this.fetchSensorDataFromApi();
   }
 
   private getInitialState(): PoultryState {
@@ -62,43 +64,71 @@ class IoTDataService {
 
     // Initial 20 history points
     const history: TelemetryPoint[] = [];
-    const baseTemp = 28.2;
-    const baseHum = 66;
-    const baseGas = 240;
-    const baseAct = 72;
+    const baseTemp = 33.4;
+    const baseHum = 80;
+    const baseGas = 255;
+    const baseAct = 74;
 
     for (let i = 19; i >= 0; i--) {
       const pastTime = new Date(now.getTime() - i * 3000);
       const pastStr = pastTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       history.push({
         time: pastStr,
-        temperature: Number((baseTemp + (Math.sin(i * 0.4) * 0.4) + (Math.random() * 0.1 - 0.05)).toFixed(1)),
-        humidity: Math.round(baseHum + (Math.cos(i * 0.3) * 1.5)),
-        gasPpm: Math.round(baseGas + (Math.sin(i * 0.2) * 8)),
-        activityIndex: Math.round(baseAct + (Math.sin(i * 0.5) * 6)),
+        temperature: baseTemp,
+        humidity: baseHum,
+        gasPpm: baseGas,
+        activityIndex: baseAct,
       });
+    }
+
+    const defaultSettings: FarmSettings = {
+      farmName: 'GreenPastures Smart Poultry',
+      poultryUnitName: 'Broiler Shed #04',
+      tempWarningThreshold: 35.0,
+      tempCriticalThreshold: 38.0,
+      humMinThreshold: 45,
+      humMaxThreshold: 85,
+      gasWarningThreshold: 350,
+      gasCriticalThreshold: 480,
+      soundAlertsEnabled: true,
+      simulationMode: false,
+      mqttBrokerUrl: 'mqtt://broker.hivemq.com:1883/poultryguard/shed4',
+      esp32IpAddress: '192.168.1.145',
+      theme: 'dark',
+    };
+
+    let activeSettings = defaultSettings;
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        const saved = localStorage.getItem('poultryguard_settings');
+        if (saved) {
+          activeSettings = { ...defaultSettings, ...JSON.parse(saved) };
+        }
+      } catch (err) {
+        console.warn('[Settings] Failed to load saved settings from localStorage:', err);
+      }
     }
 
     return {
       farmStatus: 'NORMAL',
       overallFarmHealth: 98,
       dht11: {
-        temperature: 28.4,
-        humidity: 67,
+        temperature: 33.4,
+        humidity: 80,
         tempStatus: 'NORMAL',
         humidityStatus: 'NORMAL',
-        tempTrend: 0.2,
+        tempTrend: 0.0,
         lastUpdated: timeStr,
-        safeTempRange: [20, 32],
-        safeHumRange: [50, 75],
+        safeTempRange: [20, activeSettings.tempWarningThreshold],
+        safeHumRange: [activeSettings.humMinThreshold, activeSettings.humMaxThreshold],
       },
       mq2: {
-        gasPpm: 245,
+        gasPpm: 255,
         status: 'SAFE',
-        trend: 2,
+        trend: 0,
         lastUpdated: timeStr,
-        safeThreshold: 350,
-        warningThreshold: 450,
+        safeThreshold: activeSettings.gasWarningThreshold,
+        warningThreshold: activeSettings.gasCriticalThreshold,
       },
       flame: {
         detected: false,
@@ -139,28 +169,7 @@ class IoTDataService {
         lastSyncLatencyMs: 24,
         lastSyncTime: timeStr,
       },
-      alerts: [
-        {
-          id: 'alt-1',
-          timestamp: '10:30 AM',
-          type: 'INFO',
-          sensor: 'SERVO',
-          title: 'Scheduled Feeding Completed',
-          message: 'Morning feed dispensed: 4.5kg mash pellets delivered successfully.',
-          acknowledged: true,
-          resolved: true,
-        },
-        {
-          id: 'alt-2',
-          timestamp: '08:15 AM',
-          type: 'INFO',
-          sensor: 'ESP32',
-          title: 'ESP32 Telemetry Synchronized',
-          message: 'Connected to primary Wi-Fi network (SSID: PoultryFarm_IoT).',
-          acknowledged: true,
-          resolved: true,
-        },
-      ],
+      alerts: [],
       telemetryHistory: history,
       feedingSchedules: [
         { id: 'sch-1', label: 'Morning Feeding', time: '06:30 AM', enabled: true, portionGrams: 4500 },
@@ -171,31 +180,13 @@ class IoTDataService {
         { id: 'fh-1', timestamp: '06:30 AM', mealName: 'Morning Feeding', status: 'COMPLETED', portionGrams: 4500 },
         { id: 'fh-2', timestamp: '10:30 AM', mealName: 'Nutritional Boost', status: 'MANUAL', portionGrams: 1200 },
       ],
-      emergencyEvents: [
-        { id: 'em-1', timestamp: '10:42:11', event: 'Gas level micro-fluctuation detected (280 ppm)', sensor: 'MQ-2', severity: 'NORMAL' },
-        { id: 'em-2', timestamp: '10:43:20', event: 'Gas returned to nominal baseline', sensor: 'MQ-2', severity: 'NORMAL' },
-        { id: 'em-3', timestamp: '10:50:04', event: 'Perimeter IR sweep: All sectors secure', sensor: 'IR Barrier', severity: 'NORMAL' },
-      ],
-      settings: {
-        farmName: 'GreenPastures Smart Poultry',
-        poultryUnitName: 'Broiler Shed #04',
-        tempWarningThreshold: 31.0,
-        tempCriticalThreshold: 34.0,
-        humMinThreshold: 45,
-        humMaxThreshold: 78,
-        gasWarningThreshold: 350,
-        gasCriticalThreshold: 480,
-        soundAlertsEnabled: true,
-        simulationMode: true,
-        mqttBrokerUrl: 'mqtt://broker.hivemq.com:1883/poultryguard/shed4',
-        esp32IpAddress: '192.168.1.145',
-        theme: 'dark',
-      },
+      emergencyEvents: [],
+      settings: activeSettings,
       activeScenario: 'NORMAL',
-      aiInsight: 'Environmental conditions and bird distribution are optimal. Ambient ventilation is maintaining healthy air exchange.',
+      aiInsight: 'Live sensor telemetry active from Blynk IoT cloud. Environmental conditions are nominal.',
       lastSyncedTimestamp: Date.now(),
-      isHardwareConnected: false,
-      dataSource: 'SIMULATION',
+      isHardwareConnected: true,
+      dataSource: 'WOKWI_HARDWARE',
     };
   }
 
@@ -226,15 +217,10 @@ class IoTDataService {
   }
 
   private simulatePhysicsStep() {
-    // If live hardware/Wokwi is sending data, don't overwrite with mock simulation
-    if (this.state.isHardwareConnected && this.state.dataSource === 'WOKWI_HARDWARE') {
-      if (Date.now() - this.state.lastSyncedTimestamp < 15000) {
-        return;
-      } else {
-        // Hardware stream timed out, fall back to simulation mode
-        this.state.isHardwareConnected = false;
-        this.state.dataSource = 'SIMULATION';
-      }
+    // In NORMAL operation mode, ALWAYS use the real live sensor data from Blynk.
+    // Do NOT overwrite with fake / dummy random-walk values!
+    if (this.state.activeScenario === 'NORMAL') {
+      return;
     }
 
     const now = new Date();
@@ -930,9 +916,113 @@ class IoTDataService {
   public updateSettings(newSettings: Partial<FarmSettings>) {
     soundService.playClick();
     this.state.settings = { ...this.state.settings, ...newSettings };
+    
     if (newSettings.soundAlertsEnabled !== undefined) {
       soundService.enabled = newSettings.soundAlertsEnabled;
     }
+
+    // Persist to localStorage
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        localStorage.setItem('poultryguard_settings', JSON.stringify(this.state.settings));
+      } catch (err) {
+        console.warn('[Settings] Failed to save to localStorage:', err);
+      }
+    }
+
+    // Re-evaluate thresholds on current live/simulated telemetry immediately
+    const settings = this.state.settings;
+    const currentTemp = this.state.dht11.temperature;
+    const currentHum = this.state.dht11.humidity;
+    const currentGas = this.state.mq2.gasPpm;
+    const flameDetected = this.state.flame.detected;
+    const intrusionDetected = this.state.ir.intrusionDetected;
+
+    const tempStatus: 'NORMAL' | 'WARNING' | 'CRITICAL' =
+      currentTemp >= settings.tempCriticalThreshold
+        ? 'CRITICAL'
+        : currentTemp >= settings.tempWarningThreshold
+        ? 'WARNING'
+        : 'NORMAL';
+
+    const humStatus: 'NORMAL' | 'WARNING' | 'CRITICAL' =
+      currentHum > settings.humMaxThreshold || currentHum < settings.humMinThreshold
+        ? 'WARNING'
+        : 'NORMAL';
+
+    const gasStatus: 'SAFE' | 'WARNING' | 'CRITICAL' =
+      currentGas >= settings.gasCriticalThreshold
+        ? 'CRITICAL'
+        : currentGas >= settings.gasWarningThreshold
+        ? 'WARNING'
+        : 'SAFE';
+
+    let farmStatus: 'NORMAL' | 'WARNING' | 'EMERGENCY' = 'NORMAL';
+    let healthScore = 98;
+
+    if (flameDetected) {
+      farmStatus = 'EMERGENCY';
+      healthScore = 20;
+    } else if (intrusionDetected) {
+      farmStatus = 'WARNING';
+      healthScore = 60;
+    } else if (tempStatus === 'CRITICAL' || gasStatus === 'CRITICAL') {
+      farmStatus = 'EMERGENCY';
+      healthScore = 40;
+    } else if (tempStatus === 'WARNING' || gasStatus === 'WARNING' || humStatus === 'WARNING') {
+      farmStatus = 'WARNING';
+      healthScore = 75;
+    }
+
+    // If new thresholds normalize the situation, auto-resolve alerts
+    let updatedAlerts = this.state.alerts;
+    if (tempStatus === 'NORMAL') {
+      updatedAlerts = updatedAlerts.map((a) =>
+        a.sensor === 'DHT11' ? { ...a, resolved: true, acknowledged: true } : a
+      );
+    }
+    if (gasStatus === 'SAFE') {
+      updatedAlerts = updatedAlerts.map((a) =>
+        a.sensor === 'MQ2' || a.sensor === 'MQ-2' ? { ...a, resolved: true, acknowledged: true } : a
+      );
+    }
+
+    let aiInsight = 'Environmental conditions are currently within the configured safe range.';
+    if (flameDetected) {
+      aiInsight = '🚨 CRITICAL HAZARD: Thermal flame signature detected! Immediate human dispatch required.';
+    } else if (intrusionDetected) {
+      aiInsight = '⚠️ SECURITY ALERT: Perimeter IR sensor beam interrupted. Inspect entryway immediately.';
+    } else if (tempStatus === 'CRITICAL') {
+      aiInsight = `🔥 HEAT STRESS WARNING: Temperature (${currentTemp}°C) exceeds critical limit (${settings.tempCriticalThreshold}°C). Boost exhaust fans & evaporative cooling pads.`;
+    } else if (gasStatus === 'CRITICAL') {
+      aiInsight = `💨 HAZARDOUS GAS DETECTED: MQ-2 sensor reading ${currentGas} ppm ammonia/CO buildup. Litter moisture check recommended.`;
+    } else if (tempStatus === 'WARNING') {
+      aiInsight = `Temperature is slightly elevated (${currentTemp}°C) relative to warning threshold (${settings.tempWarningThreshold}°C).`;
+    } else if (gasStatus === 'WARNING') {
+      aiInsight = `Ammonia concentration is rising (${currentGas} ppm).`;
+    }
+
+    this.state = {
+      ...this.state,
+      farmStatus,
+      overallFarmHealth: healthScore,
+      aiInsight,
+      alerts: updatedAlerts,
+      dht11: {
+        ...this.state.dht11,
+        tempStatus,
+        humidityStatus: humStatus,
+        safeTempRange: [20, settings.tempWarningThreshold],
+        safeHumRange: [settings.humMinThreshold, settings.humMaxThreshold],
+      },
+      mq2: {
+        ...this.state.mq2,
+        status: gasStatus,
+        safeThreshold: settings.gasWarningThreshold,
+        warningThreshold: settings.gasCriticalThreshold,
+      },
+    };
+
     this.notify();
   }
 
@@ -945,15 +1035,44 @@ class IoTDataService {
   }
 
   private async fetchSensorDataFromApi() {
+    // 1. Try local Express backend first (proxy on http://localhost:5000)
     try {
       const res = await fetch('/api/sensor-data');
-      if (!res.ok) return;
-      const json = await res.json();
-      if (json && json.isHardwareConnected && json.packetCount > 0) {
-        this.applyHardwareSensorData(json);
+      if (res.ok) {
+        const json = await res.json();
+        if (json && json.isHardwareConnected && json.packetCount > 0) {
+          this.applyHardwareSensorData(json);
+          return;
+        }
       }
     } catch {
-      // Backend not reached or offline, silent fallback
+      // Backend not reached, fall through to direct Blynk Cloud API fetch
+    }
+
+    // 2. Direct Blynk Cloud API fallback (guarantees real sensor telemetry always streams)
+    try {
+      const blynkRes = await fetch('https://blynk.cloud/external/api/getAll?token=TZegflZN0E3XTFZnn5tUC1TS4UFTM_as');
+      if (blynkRes.ok) {
+        const blynkData = await blynkRes.json();
+        const temperature = parseFloat(blynkData.v0) || 0;
+        const humidity = parseFloat(blynkData.v1) || 0;
+        const gasRaw = parseInt(blynkData.v2) || 0;
+        const irDetected = parseInt(blynkData.v3) || 0;
+        const flameDetected = parseInt(blynkData.v4) || 0;
+        const servoSwitch = parseInt(blynkData.v5) || 0;
+        const feederAngle = servoSwitch === 1 ? 90 : 0;
+
+        this.applyHardwareSensorData({
+          temperature,
+          humidity,
+          gas: gasRaw,
+          flame: flameDetected,
+          ir: irDetected,
+          feeder: feederAngle,
+        });
+      }
+    } catch (err) {
+      console.warn('[Blynk Direct] Polling error:', err);
     }
   }
 
@@ -970,13 +1089,35 @@ class IoTDataService {
     const timeStr = data.formattedTime || now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const { settings } = this.state;
 
-    const temp = Number(Number(data.temperature).toFixed(1));
-    const hum = Number(Number(data.humidity).toFixed(1));
-    const gas = Math.round(Number(data.gas));
-    const flameDetected = Number(data.flame) === 1 || Number(data.flame) > 0;
-    const intrusionDetected = Number(data.ir) === 1 || Number(data.ir) > 0;
-    const feederAngle = Number(data.feeder) || 0;
-    const feederStatus = feederAngle > 0 ? 'OPEN' : 'CLOSED';
+    let temp = Number(Number(data.temperature).toFixed(1));
+    let hum = Number(Number(data.humidity).toFixed(1));
+    let gas = Math.round(Number(data.gas));
+    let flameDetected = Number(data.flame) === 1 || Number(data.flame) > 0;
+    let intrusionDetected = Number(data.ir) === 1 || Number(data.ir) > 0;
+    let feederAngle = Number(data.feeder) || 0;
+    let feederStatus = feederAngle > 0 ? 'OPEN' : 'CLOSED';
+
+    // =========================================================================
+    // DEMO SCENARIOS OVERRIDE (e.g., SENSOR_FAULT)
+    // When the user clicks "Simulate Sensor Fault" or other demo scenarios,
+    // inject the abnormal simulated physical values instead of live Blynk values
+    // =========================================================================
+    const activeScenario = this.state.activeScenario;
+    if (activeScenario === 'SENSOR_FAULT') {
+      temp = 78.5;  // Extreme physical abnormality (DHT11 short-circuit / ADC fault)
+      hum = 8;      // Extreme abnormal low humidity
+      gas = 1420;   // Dangerous ADC saturation spike (MQ-2)
+    } else if (activeScenario === 'FIRE') {
+      flameDetected = true;
+      temp = 42.8;
+      gas = 620;
+    } else if (activeScenario === 'HIGH_TEMP') {
+      temp = 36.5;
+    } else if (activeScenario === 'HIGH_GAS') {
+      gas = 585;
+    } else if (activeScenario === 'INTRUSION') {
+      intrusionDetected = true;
+    }
 
     // Evaluate thresholds based on configured settings
     const tempStatus: 'NORMAL' | 'WARNING' | 'CRITICAL' =
@@ -992,11 +1133,14 @@ class IoTDataService {
     let farmStatus: 'NORMAL' | 'WARNING' | 'EMERGENCY' = 'NORMAL';
     let healthScore = 98;
 
-    if (flameDetected) {
+    if (activeScenario === 'SENSOR_FAULT') {
+      farmStatus = 'EMERGENCY';
+      healthScore = 32;
+    } else if (flameDetected || activeScenario === 'FIRE') {
       farmStatus = 'EMERGENCY';
       healthScore = 20;
       soundService.startFireSiren();
-    } else if (intrusionDetected) {
+    } else if (intrusionDetected || activeScenario === 'INTRUSION') {
       farmStatus = 'WARNING';
       healthScore = 60;
       soundService.playWarningChime();
@@ -1010,7 +1154,9 @@ class IoTDataService {
 
     // Dynamic AI Insight
     let aiInsight = 'Environmental conditions are currently within the configured safe range.';
-    if (flameDetected) {
+    if (activeScenario === 'SENSOR_FAULT') {
+      aiInsight = '⚠️ HARDWARE SENSOR ABNORMALITY DETECTED: Physical readings jumped outside standard operational envelope (DHT11: 78.5°C, MQ-2: 1420 ppm). Sensor short-circuit or analog ADC channel failure suspected.';
+    } else if (flameDetected) {
       aiInsight = '🚨 CRITICAL HAZARD: Thermal flame signature detected by Wokwi ESP32! High risk to livestock. Immediate human dispatch required.';
     } else if (intrusionDetected) {
       aiInsight = '⚠️ SECURITY ALERT: Perimeter IR sensor beam interrupted. Inspect entryway immediately.';
@@ -1076,10 +1222,10 @@ class IoTDataService {
       newAlerts.unshift({
         id: `temp-wokwi-${Date.now()}`,
         timestamp: timeStr,
-        type: 'WARNING',
+        type: 'CRITICAL',
         sensor: 'DHT11',
-        title: '⚠️ HIGH TEMPERATURE ALARM',
-        message: `Ambient heat reached ${temp}°C, exceeding configured comfort limits!`,
+        title: '🚨 CRITICAL TEMPERATURE SPIKE',
+        message: `Ambient heat reached ${temp}°C, exceeding critical limit (${settings.tempCriticalThreshold}°C)!`,
         acknowledged: false,
         resolved: false,
       });
@@ -1093,6 +1239,50 @@ class IoTDataService {
         threshold: `Critical: ${settings.tempCriticalThreshold}°C`,
         zone: 'Zone 1 — North-West Ingestion Sector',
         actionRequired: 'Boost tunnel exhaust fan RPM, activate evaporative cooling pads, supplement electrolytes in drinker water.',
+      });
+    } else if (tempStatus === 'WARNING' && this.state.dht11.tempStatus === 'NORMAL') {
+      newAlerts.unshift({
+        id: `temp-warn-${Date.now()}`,
+        timestamp: timeStr,
+        type: 'WARNING',
+        sensor: 'DHT11',
+        title: '⚠️ ELEVATED TEMPERATURE WARNING',
+        message: `Ambient heat reached ${temp}°C, crossing warning threshold (${settings.tempWarningThreshold}°C).`,
+        acknowledged: false,
+        resolved: false,
+      });
+      telegramService.sendAlert({
+        severity: 'WARNING',
+        sensor: 'DHT11 TEMPERATURE SENSOR (ESP32)',
+        title: '⚠️ TEMPERATURE WARNING — Danger Zone',
+        message: `Shed temperature has reached ${temp}°C and crossed the configured warning limit (${settings.tempWarningThreshold}°C).`,
+        value: `${temp}°C / ${hum}% RH`,
+        threshold: `Warning: ${settings.tempWarningThreshold}°C`,
+        zone: 'Zone 1 — North-West Ingestion Sector',
+        actionRequired: 'Increase sidewall ventilation and inspect evaporative cooling pads.',
+      });
+    }
+
+    if (gasStatus === 'WARNING' && this.state.mq2.status === 'SAFE') {
+      newAlerts.unshift({
+        id: `gas-warn-${Date.now()}`,
+        timestamp: timeStr,
+        type: 'WARNING',
+        sensor: 'MQ2',
+        title: '⚠️ AMMONIA GAS WARNING',
+        message: `MQ-2 sensor detected ${gas} ppm ammonia, crossing warning threshold (${settings.gasWarningThreshold} ppm).`,
+        acknowledged: false,
+        resolved: false,
+      });
+      telegramService.sendAlert({
+        severity: 'WARNING',
+        sensor: 'MQ-2 GAS SENSOR (ESP32)',
+        title: '⚠️ AMMONIA GAS CONCENTRATION RISING',
+        message: `MQ-2 sensor detected ${gas} ppm ammonia, exceeding safe baseline (${settings.gasWarningThreshold} ppm).`,
+        value: `${gas} ppm NH3`,
+        threshold: `Warning: ${settings.gasWarningThreshold} ppm`,
+        zone: 'Zone 4 — Manure Pit & Exhaust End',
+        actionRequired: 'Inspect litter for dampness and increase ventilation fan speed.',
       });
     }
     if (intrusionDetected && !this.state.ir.intrusionDetected) {
@@ -1119,57 +1309,59 @@ class IoTDataService {
       });
     }
 
-    // Hardware Recovery / Resolution Notifications
-    if (!flameDetected && this.state.flame.detected) {
-      telegramService.sendAlert({
-        severity: 'RESOLVED',
-        sensor: 'YG1006 FLAME SENSOR (ESP32)',
-        title: '✅ FIRE HAZARD CLEARED — ESP32 Safe',
-        message: 'Optical flame sensor on ESP32 reports zero thermal radiation. Fire has been extinguished and sector secured.',
-        value: '0.10 V (Safe Baseline)',
-        threshold: '< 1.50 V (Safe Limit)',
-        zone: 'Zone 2 — Central Brooding Sector',
-        actionRequired: 'Inspect brooding heaters, verify air quality, resume standard operations.',
-      });
-    }
+    // Hardware Recovery / Resolution Notifications (only when in NORMAL scenario mode)
+    if (activeScenario === 'NORMAL') {
+      if (!flameDetected && this.state.flame.detected) {
+        telegramService.sendAlert({
+          severity: 'RESOLVED',
+          sensor: 'YG1006 FLAME SENSOR (ESP32)',
+          title: '✅ FIRE HAZARD CLEARED — ESP32 Safe',
+          message: 'Optical flame sensor on ESP32 reports zero thermal radiation. Fire has been extinguished and sector secured.',
+          value: '0.10 V (Safe Baseline)',
+          threshold: '< 1.50 V (Safe Limit)',
+          zone: 'Zone 2 — Central Brooding Sector',
+          actionRequired: 'Inspect brooding heaters, verify air quality, resume standard operations.',
+        });
+      }
 
-    if (gasStatus === 'SAFE' && this.state.mq2.status !== 'SAFE') {
-      telegramService.sendAlert({
-        severity: 'RESOLVED',
-        sensor: 'MQ-2 GAS SENSOR (ESP32)',
-        title: '✅ AMMONIA LEVELS NORMALIZED — ESP32 Telemetry',
-        message: `MQ-2 sensor reading dropped to ${gas} ppm. Ammonia accumulation cleared by ventilation dampers. Air quality safe.`,
-        value: `${gas} ppm NH3 (Safe Baseline)`,
-        threshold: `Safe Limit: < ${settings.gasWarningThreshold} ppm`,
-        zone: 'Zone 4 — Manure Pit & Exhaust End',
-        actionRequired: 'Ventilation fans return to standard operating cycles.',
-      });
-    }
+      if (gasStatus === 'SAFE' && this.state.mq2.status !== 'SAFE') {
+        telegramService.sendAlert({
+          severity: 'RESOLVED',
+          sensor: 'MQ-2 GAS SENSOR (ESP32)',
+          title: '✅ AMMONIA LEVELS NORMALIZED — ESP32 Telemetry',
+          message: `MQ-2 sensor reading dropped to ${gas} ppm. Ammonia accumulation cleared by ventilation dampers. Air quality safe.`,
+          value: `${gas} ppm NH3 (Safe Baseline)`,
+          threshold: `Safe Limit: < ${settings.gasWarningThreshold} ppm`,
+          zone: 'Zone 4 — Manure Pit & Exhaust End',
+          actionRequired: 'Ventilation fans return to standard operating cycles.',
+        });
+      }
 
-    if (tempStatus === 'NORMAL' && this.state.dht11.tempStatus !== 'NORMAL') {
-      telegramService.sendAlert({
-        severity: 'RESOLVED',
-        sensor: 'DHT11 TEMPERATURE SENSOR (ESP32)',
-        title: '✅ SHED TEMPERATURE NORMALIZED — Broilers Cooled Down',
-        message: `DHT11 sensor reading cooled down to ${temp}°C (${hum}% RH). Heat stress risk eliminated.`,
-        value: `${temp}°C / ${hum}% RH`,
-        threshold: `Safe Comfort Range: 20.0°C – ${settings.tempWarningThreshold}°C`,
-        zone: 'Zone 1 — North-West Ingestion Sector',
-        actionRequired: 'Maintain nominal ventilation and fresh water supply.',
-      });
-    }
+      if (tempStatus === 'NORMAL' && this.state.dht11.tempStatus !== 'NORMAL') {
+        telegramService.sendAlert({
+          severity: 'RESOLVED',
+          sensor: 'DHT11 TEMPERATURE SENSOR (ESP32)',
+          title: '✅ SHED TEMPERATURE NORMALIZED — Broilers Cooled Down',
+          message: `DHT11 sensor reading cooled down to ${temp}°C (${hum}% RH). Heat stress risk eliminated.`,
+          value: `${temp}°C / ${hum}% RH`,
+          threshold: `Safe Comfort Range: 20.0°C – ${settings.tempWarningThreshold}°C`,
+          zone: 'Zone 1 — North-West Ingestion Sector',
+          actionRequired: 'Maintain nominal ventilation and fresh water supply.',
+        });
+      }
 
-    if (!intrusionDetected && this.state.ir.intrusionDetected) {
-      telegramService.sendAlert({
-        severity: 'RESOLVED',
-        sensor: 'IR PERIMETER SENSOR (ESP32)',
-        title: '✅ PERIMETER SECURE — Optical Beam Re-established',
-        message: 'IR optical barrier sweep reports continuous beam reception. Perimeter barrier intact.',
-        value: 'Beam: CONTINUOUS (Restored)',
-        threshold: 'Continuous 38kHz Modulated Beam',
-        zone: 'Zone 4 — South-East Boundary Fence',
-        actionRequired: 'Perimeter check nominal. Security perimeter active.',
-      });
+      if (!intrusionDetected && this.state.ir.intrusionDetected) {
+        telegramService.sendAlert({
+          severity: 'RESOLVED',
+          sensor: 'IR PERIMETER SENSOR (ESP32)',
+          title: '✅ PERIMETER SECURE — Optical Beam Re-established',
+          message: 'IR optical barrier sweep reports continuous beam reception. Perimeter barrier intact.',
+          value: 'Beam: CONTINUOUS (Restored)',
+          threshold: 'Continuous 38kHz Modulated Beam',
+          zone: 'Zone 4 — South-East Boundary Fence',
+          actionRequired: 'Perimeter check nominal. Security perimeter active.',
+        });
+      }
     }
 
     // Telemetry history update

@@ -37,6 +37,16 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* SIRAGU Architecture Diagram — Top */}
+      <div className="rounded-2xl overflow-hidden border border-cyan-500/20 shadow-xl shadow-cyan-500/5 flex justify-center bg-white/5">
+        <img
+          src="/image.png"
+          alt="SIRAGU System Architecture & Data Flow"
+          className="h-auto block"
+          style={{ maxHeight: '420px', width: 'auto', maxWidth: '100%' }}
+        />
+      </div>
+
       {/* Hero Welcome & Quick Health Banner */}
       <div className="p-5 rounded-2xl glass-panel border border-cyan-500/25 bg-gradient-to-r from-[#09121f] via-[#0d1c2d] to-[#07101a] flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl">
         <div>
@@ -204,6 +214,23 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
         {/* Real Digital Twin 3D View */}
         <RealDigitalTwin3D state={state} onSelectSensor={onSelectSensor} />
         <DigitalTwinLegend state={state} />
+      </div>
+
+      {/* System Architecture Diagram */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <span className="text-base font-black text-white tracking-wide">SYSTEM ARCHITECTURE & DATA FLOW</span>
+          <span className="px-2 py-0.5 rounded bg-cyan-950/60 text-cyan-400 text-[10px] font-mono border border-cyan-500/30">
+            SIRAGU — Sense → Understand → Act
+          </span>
+        </div>
+        <div className="rounded-2xl overflow-hidden border border-cyan-500/20 shadow-2xl shadow-cyan-500/5">
+          <img
+            src="/siragu-architecture.png"
+            alt="SIRAGU System Architecture & Data Flow"
+            className="w-full h-auto block"
+          />
+        </div>
       </div>
 
       {/* Two Column Section: Active Alerts & AI Insight */}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FarmSettings } from '../../types/poultry';
 import { PoultryState, iotDataService } from '../../services/iotDataService';
 import { telegramService } from '../../services/telegramService';
@@ -31,6 +31,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ state }) => {
   const [telegramChatId, setTelegramChatId] = useState<string>(
     currentChatId && currentChatId !== '5044522382' ? currentChatId : '1475583718'
   );
+
+  // Keep formData in sync when state.settings changes externally
+  useEffect(() => {
+    setFormData({ ...state.settings });
+  }, [state.settings]);
+
+  // Helper: update local form state AND immediately push to the IoT service
+  // so thresholds take effect in real-time as the user drags sliders.
+  const updateField = (patch: Partial<FarmSettings>) => {
+    const updated = { ...formData, ...patch };
+    setFormData(updated);
+    iotDataService.updateSettings(patch);
+  };
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,7 +97,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ state }) => {
           {savedSuccess && (
             <span className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold flex items-center gap-1.5 animate-fadeIn">
               <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              <span>Settings Saved</span>
+              <span>Settings Saved & Applied</span>
             </span>
           )}
         </div>
@@ -112,7 +125,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ state }) => {
               <input
                 type="text"
                 value={formData.farmName}
-                onChange={(e) => setFormData({ ...formData, farmName: e.target.value })}
+                onChange={(e) => updateField({ farmName: e.target.value })}
                 className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white focus:outline-none focus:border-cyan-400 font-medium"
               />
             </div>
@@ -122,7 +135,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ state }) => {
               <input
                 type="text"
                 value={formData.poultryUnitName}
-                onChange={(e) => setFormData({ ...formData, poultryUnitName: e.target.value })}
+                onChange={(e) => updateField({ poultryUnitName: e.target.value })}
                 className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white focus:outline-none focus:border-cyan-400 font-medium"
               />
             </div>
@@ -130,15 +143,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ state }) => {
         </div>
 
         {/* Section 2: Configurable Sensor Thresholds */}
-        <div className="p-5 rounded-2xl glass-panel border border-slate-800 space-y-4">
-          <div className="flex items-start justify-between gap-4">
+        <div className="p-5 rounded-2xl glass-panel border border-cyan-500/30 bg-slate-950/90 space-y-5 shadow-2xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
             <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+              <div className="p-2.5 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/40">
                 <Sliders className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                  Configurable Sensor Threshold Limits
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <span>Configurable Sensor Threshold Limits</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                    LIVE CALIBRATION
+                  </span>
                 </h3>
                 <span className="text-[11px] text-slate-400">
                   Customizable farm-specific thresholds for warning and critical alarms
@@ -146,145 +162,299 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ state }) => {
               </div>
             </div>
 
-            <div className="hidden sm:flex items-center gap-1.5 p-2 rounded-lg bg-cyan-950/40 border border-cyan-500/20 text-[11px] text-cyan-300">
-              <HelpCircle className="w-3.5 h-3.5" />
-              <span>Configurable per farm guidelines</span>
+            {/* Direct Save Button for Thresholds */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  iotDataService.updateSettings(formData);
+                  setSavedSuccess(true);
+                  setTimeout(() => setSavedSuccess(false), 3000);
+                }}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-black text-xs flex items-center gap-2 shadow-lg shadow-emerald-500/20 transition-all cursor-pointer"
+              >
+                <Save className="w-4 h-4" />
+                <span>Save Thresholds Immediately</span>
+              </button>
             </div>
           </div>
 
-          <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/80 text-[11px] text-slate-400 leading-relaxed italic">
-            * Operational Note: These values represent site-specific thresholds configured by the farm administrator to match bird age, genetic breed, and housing style. They are not universal veterinary standards.
+          {/* Quick Presets & Live Sensor Telemetry Badge */}
+          <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-bold text-slate-400">Quick Presets:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  updateField({ tempWarningThreshold: 31.0, tempCriticalThreshold: 34.0 });
+                }}
+                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 text-[11px] font-medium transition-all"
+              >
+                Standard (31°C / 34°C)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  updateField({ tempWarningThreshold: 35.0, tempCriticalThreshold: 38.0 });
+                }}
+                className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-bold transition-all"
+              >
+                🔥 Summer / High Heat (35°C / 38°C)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  updateField({ tempWarningThreshold: 33.0, tempCriticalThreshold: 36.0 });
+                }}
+                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 text-[11px] font-medium transition-all"
+              >
+                Chicks Brooding (33°C / 36°C)
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3 text-[11px] bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800">
+              <span className="text-slate-400">Live Reading:</span>
+              <span className="font-mono font-bold text-cyan-300">{state.dht11.temperature}°C</span>
+              <span
+                className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                  state.dht11.temperature >= formData.tempCriticalThreshold
+                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                    : state.dht11.temperature >= formData.tempWarningThreshold
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                    : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                }`}
+              >
+                {state.dht11.temperature >= formData.tempCriticalThreshold
+                  ? 'CRITICAL'
+                  : state.dht11.temperature >= formData.tempWarningThreshold
+                  ? 'WARNING'
+                  : 'NORMAL / SAFE'}
+              </span>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5 text-xs">
             {/* Temperature Thresholds */}
-            <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3">
-              <div className="flex items-center gap-2 font-bold text-white">
-                <Thermometer className="w-4 h-4 text-cyan-400" />
-                <span>Temperature Calibration</span>
+            <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 space-y-4">
+              <div className="flex items-center justify-between font-bold text-white">
+                <div className="flex items-center gap-2">
+                  <Thermometer className="w-4 h-4 text-cyan-400" />
+                  <span>Temperature Calibration</span>
+                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
+                  Live: {state.dht11.temperature}°C
+                </span>
               </div>
 
               <div>
-                <div className="flex justify-between text-slate-400 mb-1">
+                <div className="flex justify-between items-center text-slate-400 mb-1.5">
                   <span>Warning Threshold:</span>
-                  <span className="font-mono text-amber-400 font-bold">{formData.tempWarningThreshold}°C</span>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min={20}
+                      max={40}
+                      step={0.5}
+                      value={formData.tempWarningThreshold}
+                      onChange={(e) =>
+                        updateField({ tempWarningThreshold: Number(e.target.value) })
+                      }
+                      className="w-16 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 text-amber-400 font-mono font-bold text-right focus:outline-none focus:border-amber-400"
+                    />
+                    <span className="text-slate-400">°C</span>
+                  </div>
                 </div>
                 <input
                   type="range"
-                  min={25}
-                  max={38}
+                  min={20}
+                  max={40}
                   step={0.5}
                   value={formData.tempWarningThreshold}
                   onChange={(e) =>
-                    setFormData({ ...formData, tempWarningThreshold: Number(e.target.value) })
+                    updateField({ tempWarningThreshold: Number(e.target.value) })
                   }
-                  className="w-full accent-amber-400"
+                  className="w-full accent-amber-400 cursor-pointer"
                 />
               </div>
 
               <div>
-                <div className="flex justify-between text-slate-400 mb-1">
+                <div className="flex justify-between items-center text-slate-400 mb-1.5">
                   <span>Critical Threshold:</span>
-                  <span className="font-mono text-rose-400 font-bold">{formData.tempCriticalThreshold}°C</span>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min={28}
+                      max={48}
+                      step={0.5}
+                      value={formData.tempCriticalThreshold}
+                      onChange={(e) =>
+                        updateField({ tempCriticalThreshold: Number(e.target.value) })
+                      }
+                      className="w-16 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 text-rose-400 font-mono font-bold text-right focus:outline-none focus:border-rose-400"
+                    />
+                    <span className="text-slate-400">°C</span>
+                  </div>
                 </div>
                 <input
                   type="range"
-                  min={30}
-                  max={45}
+                  min={28}
+                  max={48}
                   step={0.5}
                   value={formData.tempCriticalThreshold}
                   onChange={(e) =>
-                    setFormData({ ...formData, tempCriticalThreshold: Number(e.target.value) })
+                    updateField({ tempCriticalThreshold: Number(e.target.value) })
                   }
-                  className="w-full accent-rose-500"
+                  className="w-full accent-rose-500 cursor-pointer"
                 />
               </div>
             </div>
 
             {/* Humidity Thresholds */}
-            <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3">
-              <div className="flex items-center gap-2 font-bold text-white">
-                <Droplets className="w-4 h-4 text-cyan-300" />
-                <span>Relative Humidity Calibration</span>
+            <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 space-y-4">
+              <div className="flex items-center justify-between font-bold text-white">
+                <div className="flex items-center gap-2">
+                  <Droplets className="w-4 h-4 text-cyan-300" />
+                  <span>Humidity Calibration</span>
+                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
+                  Live: {state.dht11.humidity}%
+                </span>
               </div>
 
               <div>
-                <div className="flex justify-between text-slate-400 mb-1">
+                <div className="flex justify-between items-center text-slate-400 mb-1.5">
                   <span>Minimum Target:</span>
-                  <span className="font-mono text-cyan-300 font-bold">{formData.humMinThreshold}%</span>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min={20}
+                      max={65}
+                      step={1}
+                      value={formData.humMinThreshold}
+                      onChange={(e) =>
+                        updateField({ humMinThreshold: Number(e.target.value) })
+                      }
+                      className="w-16 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 text-cyan-300 font-mono font-bold text-right focus:outline-none focus:border-cyan-400"
+                    />
+                    <span className="text-slate-400">%</span>
+                  </div>
                 </div>
                 <input
                   type="range"
-                  min={30}
-                  max={60}
+                  min={20}
+                  max={65}
                   step={1}
                   value={formData.humMinThreshold}
                   onChange={(e) =>
-                    setFormData({ ...formData, humMinThreshold: Number(e.target.value) })
+                    updateField({ humMinThreshold: Number(e.target.value) })
                   }
-                  className="w-full accent-cyan-400"
+                  className="w-full accent-cyan-400 cursor-pointer"
                 />
               </div>
 
               <div>
-                <div className="flex justify-between text-slate-400 mb-1">
+                <div className="flex justify-between items-center text-slate-400 mb-1.5">
                   <span>Maximum Ceiling:</span>
-                  <span className="font-mono text-amber-400 font-bold">{formData.humMaxThreshold}%</span>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min={60}
+                      max={95}
+                      step={1}
+                      value={formData.humMaxThreshold}
+                      onChange={(e) =>
+                        updateField({ humMaxThreshold: Number(e.target.value) })
+                      }
+                      className="w-16 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 text-amber-400 font-mono font-bold text-right focus:outline-none focus:border-amber-400"
+                    />
+                    <span className="text-slate-400">%</span>
+                  </div>
                 </div>
                 <input
                   type="range"
-                  min={65}
-                  max={90}
+                  min={60}
+                  max={95}
                   step={1}
                   value={formData.humMaxThreshold}
                   onChange={(e) =>
-                    setFormData({ ...formData, humMaxThreshold: Number(e.target.value) })
+                    updateField({ humMaxThreshold: Number(e.target.value) })
                   }
-                  className="w-full accent-amber-400"
+                  className="w-full accent-amber-400 cursor-pointer"
                 />
               </div>
             </div>
 
             {/* Gas Thresholds */}
-            <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3">
-              <div className="flex items-center gap-2 font-bold text-white">
-                <Wind className="w-4 h-4 text-emerald-400" />
-                <span>MQ-2 Gas / Ammonia Calibration</span>
+            <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 space-y-4">
+              <div className="flex items-center justify-between font-bold text-white">
+                <div className="flex items-center gap-2">
+                  <Wind className="w-4 h-4 text-emerald-400" />
+                  <span>MQ-2 Gas / Ammonia</span>
+                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
+                  Live: {state.mq2.gasPpm} ppm
+                </span>
               </div>
 
               <div>
-                <div className="flex justify-between text-slate-400 mb-1">
+                <div className="flex justify-between items-center text-slate-400 mb-1.5">
                   <span>Warning Threshold:</span>
-                  <span className="font-mono text-amber-400 font-bold">{formData.gasWarningThreshold} ppm</span>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min={100}
+                      max={500}
+                      step={10}
+                      value={formData.gasWarningThreshold}
+                      onChange={(e) =>
+                        updateField({ gasWarningThreshold: Number(e.target.value) })
+                      }
+                      className="w-16 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 text-amber-400 font-mono font-bold text-right focus:outline-none focus:border-amber-400"
+                    />
+                    <span className="text-slate-400">ppm</span>
+                  </div>
                 </div>
                 <input
                   type="range"
-                  min={200}
-                  max={450}
+                  min={100}
+                  max={500}
                   step={10}
                   value={formData.gasWarningThreshold}
                   onChange={(e) =>
-                    setFormData({ ...formData, gasWarningThreshold: Number(e.target.value) })
+                    updateField({ gasWarningThreshold: Number(e.target.value) })
                   }
-                  className="w-full accent-amber-400"
+                  className="w-full accent-amber-400 cursor-pointer"
                 />
               </div>
 
               <div>
-                <div className="flex justify-between text-slate-400 mb-1">
-                  <span>Critical Evac Threshold:</span>
-                  <span className="font-mono text-rose-400 font-bold">{formData.gasCriticalThreshold} ppm</span>
+                <div className="flex justify-between items-center text-slate-400 mb-1.5">
+                  <span>Critical Threshold:</span>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min={300}
+                      max={1000}
+                      step={10}
+                      value={formData.gasCriticalThreshold}
+                      onChange={(e) =>
+                        updateField({ gasCriticalThreshold: Number(e.target.value) })
+                      }
+                      className="w-16 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 text-rose-400 font-mono font-bold text-right focus:outline-none focus:border-rose-400"
+                    />
+                    <span className="text-slate-400">ppm</span>
+                  </div>
                 </div>
                 <input
                   type="range"
-                  min={400}
-                  max={700}
+                  min={300}
+                  max={1000}
                   step={10}
                   value={formData.gasCriticalThreshold}
                   onChange={(e) =>
-                    setFormData({ ...formData, gasCriticalThreshold: Number(e.target.value) })
+                    updateField({ gasCriticalThreshold: Number(e.target.value) })
                   }
-                  className="w-full accent-rose-500"
+                  className="w-full accent-rose-500 cursor-pointer"
                 />
               </div>
             </div>
@@ -313,7 +483,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ state }) => {
               <input
                 type="text"
                 value={formData.mqttBrokerUrl}
-                onChange={(e) => setFormData({ ...formData, mqttBrokerUrl: e.target.value })}
+                onChange={(e) => updateField({ mqttBrokerUrl: e.target.value })}
                 className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-cyan-300 font-mono focus:outline-none focus:border-cyan-400"
               />
             </div>
@@ -323,7 +493,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ state }) => {
               <input
                 type="text"
                 value={formData.esp32IpAddress}
-                onChange={(e) => setFormData({ ...formData, esp32IpAddress: e.target.value })}
+                onChange={(e) => updateField({ esp32IpAddress: e.target.value })}
                 className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-cyan-300 font-mono focus:outline-none focus:border-cyan-400"
               />
             </div>
@@ -336,7 +506,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ state }) => {
                 id="soundAlerts"
                 checked={formData.soundAlertsEnabled}
                 onChange={(e) =>
-                  setFormData({ ...formData, soundAlertsEnabled: e.target.checked })
+                  updateField({ soundAlertsEnabled: e.target.checked })
                 }
                 className="w-4 h-4 rounded bg-slate-900 border-slate-800 text-cyan-500 focus:ring-0"
               />
@@ -350,7 +520,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ state }) => {
                 type="checkbox"
                 id="simMode"
                 checked={formData.simulationMode}
-                onChange={(e) => setFormData({ ...formData, simulationMode: e.target.checked })}
+                onChange={(e) => updateField({ simulationMode: e.target.checked })}
                 className="w-4 h-4 rounded bg-slate-900 border-slate-800 text-cyan-500 focus:ring-0"
               />
               <label htmlFor="simMode" className="text-slate-300 font-medium cursor-pointer">
@@ -403,7 +573,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ state }) => {
               <input
                 type="text"
                 readOnly
-                value="8766111438:AAFdJ8VzQ5Mj9LQXXpbFHpLoU5xJwvv1qTU"
+                value="8766111438:AAGHfTdWeaLHDEXWo89Fe_lN-fm040km2HY"
                 className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-slate-800 text-slate-400 font-mono focus:outline-none"
               />
               <span className="text-[10px] text-slate-500 mt-1 block">

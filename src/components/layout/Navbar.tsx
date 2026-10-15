@@ -116,14 +116,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                 IoT + AI v2.4
               </span>
               {/* Connection Mode Badge */}
-              {state.isHardwareConnected && state.dataSource === 'WOKWI_HARDWARE' ? (
+              {state.isHardwareConnected ? (
                 <span className="px-2 py-0.5 rounded bg-emerald-950/90 border border-emerald-500/50 text-[10px] font-mono text-emerald-300 font-bold flex items-center gap-1.5 shadow-sm shadow-emerald-500/20">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-                  LIVE WOKWI / ESP32
+                  LIVE BLYNK / ESP32
                 </span>
               ) : (
                 <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-[10px] font-mono text-amber-300">
-                  SIMULATION MODE
+                  CONNECTING BLYNK...
                 </span>
               )}
             </div>

@@ -1,6 +1,6 @@
 import { PoultryState } from './iotDataService';
 
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+const GEMINI_API_KEY = 'YOUR_GOOGLE_CLOUD_GEMINI_API_KEY_HERE'; // Replace with your actual
 
 export interface ComponentHealthStatus {
   id: string;
@@ -366,41 +366,45 @@ Return your response in clean JSON format:
   "recommendations": ["Action item 1", "Action item 2"]
 }`;
 
-  try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.2,
-          maxOutputTokens: 800,
-        },
-      }),
-    });
+  const candidateModels = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash'];
 
-    if (res.ok) {
-      const data = await res.json();
-      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (rawText) {
-        // Extract JSON from response
-        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
-          if (parsed.summary) {
-            localReport.aiAnalysisSummary = parsed.summary;
+  for (const model of candidateModels) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: 800,
+          },
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (rawText) {
+          const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (parsed.summary) {
+              localReport.aiAnalysisSummary = parsed.summary;
+            }
+            if (Array.isArray(parsed.recommendations) && parsed.recommendations.length > 0) {
+              localReport.recommendations = parsed.recommendations;
+            }
+          } else {
+            localReport.aiAnalysisSummary = rawText.slice(0, 300);
           }
-          if (Array.isArray(parsed.recommendations) && parsed.recommendations.length > 0) {
-            localReport.recommendations = parsed.recommendations;
-          }
-        } else {
-          localReport.aiAnalysisSummary = rawText.slice(0, 300);
+          break;
         }
       }
+    } catch (err) {
+      // Continue to next candidate
     }
-  } catch (err) {
-    console.warn('[Gemini Node Health] Could not contact Gemini endpoint, using deterministic rule engine:', err);
   }
 
   return localReport;

@@ -1,0 +1,1 @@
+https://blynk.cloud/external/api/getAll?token=TZegflZN0E3XTFZnn5tUC1TS4UFTM_as

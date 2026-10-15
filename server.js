@@ -133,7 +133,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+const TELEGRAM_BOT_TOKEN = '8766111438:AAGHfTdWeaLHDEXWo89Fe_lN-fm040km2HY';
 
 /**
  * Helper: make a JSON POST/GET request to Telegram Bot API via Node.js https module
@@ -204,11 +204,76 @@ app.post('/api/telegram/send', async (req, res) => {
   }
 });
 
+// =============================================================
+// BLYNK CLOUD POLLING — Fetch live sensor data from ESP32 via Blynk
+// =============================================================
+const BLYNK_API_URL = 'https://blynk.cloud/external/api/getAll?token=TZegflZN0E3XTFZnn5tUC1TS4UFTM_as';
+
+async function pollBlynkData() {
+  try {
+    const res = await fetch(BLYNK_API_URL);
+    if (!res.ok) {
+      console.warn('[Blynk] HTTP error:', res.status, res.statusText);
+      return;
+    }
+    const data = await res.json();
+
+    // Blynk virtual pin mapping (from sketch_with_blynk.ino):
+    // V0 = temperature, V1 = humidity, V2 = gas (raw ADC), V3 = IR, V4 = flame, V5 = servo switch
+    const temperature = parseFloat(data.v0) || 0;
+    const humidity = parseFloat(data.v1) || 0;
+    const gasRaw = parseInt(data.v2) || 0;
+    const irDetected = parseInt(data.v3) || 0;
+    const flameDetected = parseInt(data.v4) || 0;
+    const servoSwitch = parseInt(data.v5) || 0;
+    const feederAngle = servoSwitch === 1 ? 90 : 0;
+
+    const now = new Date();
+
+    const parsedData = {
+      temperature: Number(temperature.toFixed(1)),
+      humidity: Number(humidity.toFixed(1)),
+      gas: gasRaw,
+      flame: flameDetected,
+      ir: irDetected,
+      feeder: feederAngle,
+      timestamp: now.toISOString(),
+      formattedTime: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      lastUpdatedMs: Date.now(),
+      packetCount: latestSensorData.packetCount + 1,
+      isHardwareConnected: true
+    };
+
+    latestSensorData = parsedData;
+
+    // Store in history ring buffer
+    dataHistory.push({
+      time: parsedData.formattedTime,
+      temperature: parsedData.temperature,
+      humidity: parsedData.humidity,
+      gasPpm: parsedData.gas,
+      activityIndex: parsedData.ir === 1 ? 92 : 72
+    });
+    if (dataHistory.length > 50) {
+      dataHistory.shift();
+    }
+
+    console.log(`[Blynk] Packet #${parsedData.packetCount}: Temp=${parsedData.temperature}°C, Hum=${parsedData.humidity}%, Gas=${parsedData.gas}, Flame=${parsedData.flame}, IR=${parsedData.ir}, Feeder=${parsedData.feeder}°`);
+  } catch (err) {
+    console.warn('[Blynk] Poll error:', err.message || err);
+  }
+}
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`====================================================`);
   console.log(`  POULTRYGUARD AI — ESP32 Sensor API Backend`);
   console.log(`  Listening on http://localhost:${PORT}`);
   console.log(`  POST endpoint: http://localhost:${PORT}/api/sensor-data`);
   console.log(`  GET  endpoint: http://localhost:${PORT}/api/sensor-data`);
+  console.log(`  Blynk polling: ACTIVE (every 3 seconds)`);
   console.log(`====================================================`);
+
+  // Start polling Blynk every 3 seconds
+  pollBlynkData(); // immediate first poll
+  setInterval(pollBlynkData, 3000);
 });

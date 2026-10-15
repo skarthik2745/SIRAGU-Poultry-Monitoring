@@ -1,6 +1,6 @@
 import { PoultryState } from './iotDataService';
 
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+const GEMINI_API_KEY = 'YOUR_GOOGLE_CLOUD_GEMINI_API_KEY_HERE'; // Replace with your actual
 
 export interface ChatMessage {
   id: string;
@@ -154,60 +154,50 @@ You assist poultry farmers, managers, and technicians with:
 
 Always refer directly to the live sensor telemetry provided when diagnosing conditions. Give structured, clear, bulleted recommendations with practical farm-level steps. Keep your tone encouraging, professional, and safety-focused.`;
 
-  // Format request for Gemini 1.5 / 2.0 API endpoint
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+  const prompt = `${systemInstruction}\n\n${telemetrySummary}\n\nUser Question: ${userQuery}`;
 
-  const prompt = `${systemInstruction}
+  // Format request for Gemini API endpoint (trying modern active models)
+  const candidateModels = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash'];
+  let lastError: any = null;
 
-${telemetrySummary}
-
-User Question: ${userQuery}`;
-
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: prompt }],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 1024,
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      // If gemini-2.5-flash is not available, try gemini-1.5-flash fallback
-      const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-      const fallbackRes = await fetch(fallbackUrl, {
+  for (const model of candidateModels) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+      const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
+          contents: [
+            {
+              parts: [{ text: prompt }],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 1024,
+          },
         }),
       });
 
-      if (!fallbackRes.ok) {
-        throw new Error(`Gemini API error: ${fallbackRes.statusText}`);
+      if (response.ok) {
+        const data = await response.json();
+        const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (reply) return reply;
+      } else {
+        const errJson = await response.json().catch(() => ({}));
+        lastError = errJson?.error?.message || response.statusText;
       }
-
-      const fallbackData = await fallbackRes.json();
-      return fallbackData.candidates?.[0]?.content?.parts?.[0]?.text || generateOfflineResponse(userQuery, currentState);
+    } catch (e) {
+      lastError = e;
     }
-
-    const data = await response.json();
-    const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    return reply || generateOfflineResponse(userQuery, currentState);
-  } catch (error) {
-    console.warn('Gemini API query failed or network issue, using smart heuristic advisor:', error);
-    return generateOfflineResponse(userQuery, currentState);
   }
+
+  if (lastError) {
+    console.warn('[Gemini AI] API responded with error or permission denied:', lastError);
+  }
+  return generateOfflineResponse(userQuery, currentState);
 }
 
 /**
