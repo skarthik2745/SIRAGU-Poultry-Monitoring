@@ -983,7 +983,7 @@ class IoTDataService {
     }
     if (gasStatus === 'SAFE') {
       updatedAlerts = updatedAlerts.map((a) =>
-        a.sensor === 'MQ2' || a.sensor === 'MQ-2' ? { ...a, resolved: true, acknowledged: true } : a
+        (a.sensor as string) === 'MQ2' || (a.sensor as string) === 'MQ-2' ? { ...a, resolved: true, acknowledged: true } : a
       );
     }
 
@@ -1095,7 +1095,7 @@ class IoTDataService {
     let flameDetected = Number(data.flame) === 1 || Number(data.flame) > 0;
     let intrusionDetected = Number(data.ir) === 1 || Number(data.ir) > 0;
     let feederAngle = Number(data.feeder) || 0;
-    let feederStatus = feederAngle > 0 ? 'OPEN' : 'CLOSED';
+    let feederStatus: 'CLOSED' | 'OPEN' | 'DISPENSING' = feederAngle > 0 ? 'OPEN' : 'CLOSED';
 
     // =========================================================================
     // DEMO SCENARIOS OVERRIDE (e.g., SENSOR_FAULT)
